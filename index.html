@@ -32,6 +32,12 @@ summary{cursor:pointer;color:var(--accent)}
 ul,ol{padding-left:20px}
 footer{margin-top:30px;display:flex;gap:8px;flex-wrap:wrap;font-size:13px;align-items:center}
 #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:99px;font-size:14px;max-width:90%}
+.stars{display:inline-flex;font-size:20px;line-height:1;vertical-align:middle}
+.star{position:relative;display:inline-block;width:1em;color:var(--line)}
+.star .base{color:var(--line)}
+.star .fill{position:absolute;left:0;top:0;overflow:hidden;white-space:nowrap;color:var(--accent);pointer-events:none}
+.star .half{position:absolute;top:0;bottom:0;left:0;width:50%;z-index:1;cursor:pointer}
+.star .half.r{left:50%}
 </style>
 <header><h1>Ons Gezin</h1></header>
 <nav>
@@ -160,6 +166,7 @@ function seed() {
       { id: uid(), name: 'Gehakt', unit: 'g', qty: 0, min: 500, target: 1000, cat: 'Vlees & vis' }
     ],
     list: [],
+    ratings: {},
     plan: DEFAULT_PLAN.map(d => ({ ...d, cooked: false, used: [] }))
   };
   restockAll();
@@ -172,6 +179,7 @@ function normalize(s) {
   return {
     pantry: s.pantry || [],
     list: s.list || [],
+    ratings: s.ratings || {},
     plan: (s.plan || DEFAULT_PLAN).map(d => ({ cooked: false, used: [], ...d, recipe: RECIPES[d.recipe] ? d.recipe : null }))
   };
 }
@@ -430,7 +438,7 @@ function kastRanking() {
     const ingr = scaled({ recipe: key, portions: r.base });
     const missing = ingr.filter(x => haveQty(x.name, x.unit) < x.amount);
     return { key, r, missing, score: (ingr.length - missing.length) / ingr.length };
-  }).sort((a, b) => b.score - a.score);
+  }).sort((a, b) => b.score - a.score || rating(b.key) - rating(a.key));
 }
 
 // ---------- weergave ----------
@@ -551,7 +559,7 @@ function viewList() {
 function dayCard(d, i) {
   const opts = `<option value="">— Restjes van de dag ervoor —</option>` +
     `<option value="out" ${d.out ? 'selected' : ''}>Bij de grootouders</option>` +
-    Object.entries(RECIPES).map(([k, r]) => `<option value="${k}" ${d.recipe === k ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+    Object.entries(RECIPES).map(([k, r]) => `<option value="${k}" ${d.recipe === k ? 'selected' : ''}>${esc(r.name)}${rating(k) ? ` (${fmtAmt(rating(k))}★)` : ''}</option>`).join('');
   const select = `<select class="grow" data-act="recipe" data-i="${i}">${opts}</select>`;
   if (d.out) {
     return `<div class="card"><div class="row"><b style="min-width:90px">${DAYS[i]}</b>${select}</div>
@@ -577,7 +585,29 @@ function dayCard(d, i) {
       <ul>${scaled(d).map(x => `<li>${fmtAmt(x.amount)} ${esc(x.unit)} ${esc(x.name)}</li>`).join('')}</ul>
       <ol>${r.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
     </details>
+    <div class="row" style="margin-top:8px"><span class="muted">Beoordeling</span>${stars(d.recipe, rating(d.recipe))}</div>
   </div>`;
+}
+
+// Beoordeling per recept: 0,5 tot 10 sterren in stappen van een halve ster
+function rating(key) {
+  return (state.ratings && state.ratings[key]) || 0;
+}
+
+function setRating(key, val) {
+  state.ratings = state.ratings || {};
+  state.ratings[key] = val;
+  save();
+}
+
+// Tien sterren; elke ster heeft een linkerhelft (halve ster) en een rechterhelft (hele ster)
+function stars(key, val) {
+  const cells = [];
+  for (let i = 1; i <= 10; i++) {
+    const pct = Math.max(0, Math.min(1, val - (i - 1))) * 100;
+    cells.push(`<span class="star"><span class="half" data-act="rate" data-key="${key}" data-val="${i - 0.5}"></span><span class="half r" data-act="rate" data-key="${key}" data-val="${i}"></span><span class="base">★</span><span class="fill" style="width:${pct}%">★</span></span>`);
+  }
+  return `<span class="stars">${cells.join('')}</span> <span class="muted">${val ? fmtAmt(val) + ' van 10' : 'nog niet beoordeeld'}</span>`;
 }
 
 function viewKast() {
@@ -588,6 +618,7 @@ function viewKast() {
         <b class="grow">${esc(r.name)}</b>
         <span class="tag ${score === 1 ? 'ok' : ''}">${Math.round(score * 100)}% in huis</span>
       </div>
+      <div class="row">${stars(key, rating(key))}</div>
       <p class="muted">${missing.length
         ? 'Mist: ' + missing.map(x => `${fmtAmt(x.amount)} ${esc(x.unit)} ${esc(x.name)}`).join(', ')
         : 'Alles is in huis'}</p>
@@ -659,6 +690,7 @@ document.addEventListener('click', e => {
     case 'clearChecked': state.list = state.list.filter(l => !l.checked); return save();
     case 'fromMenu': return addMenuToList();
     case 'basics': return addBasics();
+    case 'rate': return setRating(t.dataset.key, Number(t.dataset.val));
     case 'kastSet': return setRecipe(Number(document.getElementById('day-' + t.dataset.key).value), t.dataset.key);
     case 'copy': return copyList();
     case 'cook': return toggleCooked(i);
