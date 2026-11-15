@@ -1,0 +1,737 @@
+<title>Ons Gezin</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root{--bg:#f7f5f0;--card:#fff;--ink:#222;--muted:#6b6b6b;--accent:#2f7d5b;--warn:#c4572b;--line:#e4e0d6;color-scheme:light}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#1b1d1c;--card:#252827;--ink:#eee;--muted:#a3a3a3;--accent:#5fbf93;--warn:#f08a5d;--line:#353a38;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#1b1d1c;--card:#252827;--ink:#eee;--muted:#a3a3a3;--accent:#5fbf93;--warn:#f08a5d;--line:#353a38;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,sans-serif;line-height:1.4;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-bottom:40px}
+header{background:var(--accent);color:#fff;padding:14px 16px;margin:0 calc(-1*max(16px,env(safe-area-inset-left,0px))) 0;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header h1{margin:0;font-size:20px}
+nav{display:flex;gap:6px;padding:10px 0 0;max-width:720px;margin:auto;overflow-x:auto}
+nav button{flex:1;white-space:nowrap}
+nav button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+main{max-width:720px;margin:auto;min-width:0}
+h2{font-size:16px;margin:18px 0 6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:8px 0}
+.item{padding:7px 0;border-bottom:1px solid var(--line)}
+.item:last-child{border-bottom:0}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:6px 10px;cursor:pointer}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+input,select{font:inherit;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);min-width:0}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow{flex:1 1 120px;min-width:0}
+.qty{width:72px;text-align:center}
+.muted{color:var(--muted);font-size:13px}
+.low{color:var(--warn)}
+.done{text-decoration:line-through;color:var(--muted)}
+.tag{font-size:12px;padding:2px 8px;border-radius:99px;background:var(--line)}
+.tag.ok{background:var(--accent);color:#fff}
+details{margin-top:8px}
+summary{cursor:pointer;color:var(--accent)}
+ul,ol{padding-left:20px}
+footer{margin-top:30px;display:flex;gap:8px;flex-wrap:wrap;font-size:13px;align-items:center}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:99px;font-size:14px;max-width:90%}
+</style>
+<header><h1>Ons Gezin</h1></header>
+<nav>
+  <button data-tab="voorraad">Voorraadkast</button>
+  <button data-tab="lijst">Boodschappen <span id="badge"></span></button>
+  <button data-tab="menu">Weekmenu</button>
+</nav>
+<main id="main"></main>
+<main>
+  <footer>
+    <button data-act="export">Exporteer</button>
+    <label class="muted">Importeer: <input type="file" accept="application/json" data-act="import"></label>
+  </footer>
+</main>
+<div id="toast" hidden></div>
+
+<script>
+const KEY = 'gezinsapp-v1';
+const DAYS = ['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag'];
+const CATS = ['Groente & fruit','Vlees & vis','Zuivel & eieren','Droogwaren','Conserven','Kruiden & sauzen','Diepvries','Overig'];
+const UNITS = ['g', 'ml', 'stuk', 'blik', 'el', 'tl', 'bosje', 'teen', 'pak', 'fles', 'zak'];
+
+// ingrediënt: [naam, hoeveelheid voor base personen, eenheid, categorie]
+// Per dag: kookdag met recept, restjes (recipe: null) of bij de grootouders (out: true)
+// Recepten komen uit de voorraad van het gezin; de app start zonder voorbeeldrecepten
+const RECIPES = {
+  stoofvlees: {
+    name: 'Stoofvlees met puree en verborgen wortel', type: 'Vlees', keuken: 'Belgisch', base: 4,
+    kind: 'De wortelpuree zit door de aardappelpuree. Kinderen eten gewoon puree.',
+    ingr: [
+      ['Stoofvlees', 800, 'g', 'Vlees & vis'], ['Uien', 300, 'g', 'Groente & fruit'],
+      ['Bloem', 30, 'g', 'Droogwaren'], ['Tomatenpuree', 1, 'blik', 'Conserven'],
+      ['Suiker', 15, 'g', 'Droogwaren'], ['Aardappelpuree', 600, 'g', 'Diepvries'],
+      ['Wortelpuree', 400, 'g', 'Diepvries']
+    ],
+    steps: [
+      'Ontdooi de uien en bak ze in een pan zacht.',
+      'Bak het stoofvlees rul, bestrooi met bloem en roer 1 minuut mee.',
+      'Voeg tomatenpuree, suiker en 0,5 liter water toe. Laat 1,5 uur zachtjes pruttelen tot het vlees mals is.',
+      'Warm de aardappelpuree en wortelpuree samen op en roer goed door.',
+      'Serveer het stoofvlees met de puree.'
+    ]
+  },
+  pastagehakt: {
+    name: 'Penne met gehaktballetjes en verstopte groente', type: 'Vlees', keuken: 'Italiaans', base: 4,
+    kind: 'De groentemix verdwijnt in de saus na het pureren.',
+    ingr: [
+      ['Pasta', 400, 'g', 'Droogwaren'], ['Gehaktballetjes', 500, 'g', 'Diepvries'],
+      ['Passata', 1, 'pak', 'Conserven'], ['Tomatenpuree', 1, 'blik', 'Conserven'],
+      ['Groentenmix', 300, 'g', 'Diepvries'], ['Uien', 100, 'g', 'Groente & fruit']
+    ],
+    steps: [
+      'Bak de uien zacht in een pan.',
+      'Voeg de groentemix en tomatenpuree toe en bak 5 minuten mee.',
+      'Giet de passata erbij en laat 10 minuten sudderen. Pureer de saus met een staafmixer.',
+      'Bak de gehaktballetjes gaar en voeg ze toe aan de saus.',
+      'Kook de penne al dente en serveer.'
+    ]
+  },
+  pollak: {
+    name: 'Pollakfilet met pesto, krieltjes en knolselderpuree', type: 'Vis', keuken: 'Mediterraans', base: 4,
+    kind: 'Pesto en citroen maken de vis lekker. De knolselder verdwijnt in de puree.',
+    ingr: [
+      ['Alaskapollakfilets', 4, 'stuk', 'Diepvries'], ['Krieltjes', 600, 'g', 'Diepvries'],
+      ['Knolselder', 400, 'g', 'Diepvries'], ['Broccolimix', 500, 'g', 'Diepvries'],
+      ['Pesto', 1, 'stuk', 'Kruiden & sauzen'], ['Citroen', 1, 'stuk', 'Groente & fruit']
+    ],
+    steps: [
+      'Oven op 200 °C. Ontdooi de vis en leg hem in een ovenschaal.',
+      'Bestrijk de vis met pesto en leg citroenschijfjes erop. Bak 15 minuten.',
+      'Kook de krieltjes, knolselder en broccoli gaar. Stamp de krieltjes en knolselder samen tot puree.',
+      'Serveer de vis met de puree en de broccoli erbij.'
+    ]
+  }
+};
+
+const DEFAULT_PLAN = [
+  { recipe: null }, { recipe: null }, { recipe: null }, { recipe: null },
+  { out: true },
+  { recipe: null }, { recipe: null }
+];
+
+// Basisvoorraad: [naam, eenheid, categorie, minimum, doel]
+const BASICS = [
+  ['Pasta', 'g', 'Droogwaren', 500, 1000], ['Rijst', 'g', 'Droogwaren', 300, 1000],
+  ['Havermout', 'g', 'Droogwaren', 500, 1000], ['Paneermeel', 'g', 'Droogwaren', 150, 300],
+  ['Bloem', 'g', 'Droogwaren', 500, 1000], ['Tomatenblokjes', 'blik', 'Conserven', 2, 6],
+  ['Kokosmelk', 'blik', 'Conserven', 1, 3], ['Kikkererwten', 'blik', 'Conserven', 2, 4],
+  ['Appelmoes', 'g', 'Conserven', 400, 800], ['Bouillonblokjes', 'stuk', 'Droogwaren', 3, 10],
+  ['Olijfolie', 'ml', 'Kruiden & sauzen', 250, 1000], ['Zonnebloemolie', 'ml', 'Kruiden & sauzen', 250, 1000],
+  ['Mayonaise', 'ml', 'Kruiden & sauzen', 250, 500], ['Ketchup', 'ml', 'Kruiden & sauzen', 250, 500],
+  ['Tomatenpuree', 'el', 'Kruiden & sauzen', 2, 6], ['Italiaanse kruiden', 'tl', 'Kruiden & sauzen', 10, 30],
+  ['Paprikapoeder', 'tl', 'Kruiden & sauzen', 10, 30], ['Milde currypasta', 'el', 'Kruiden & sauzen', 4, 10],
+  ['Ui', 'stuk', 'Groente & fruit', 2, 5], ['Knoflook', 'teen', 'Groente & fruit', 3, 10],
+  ['Eieren', 'stuk', 'Zuivel & eieren', 6, 12], ['Melk', 'ml', 'Zuivel & eieren', 1000, 2000],
+  ['Boter', 'g', 'Zuivel & eieren', 250, 500], ['Parmezaan', 'g', 'Zuivel & eieren', 100, 200],
+  ['Kaas', 'g', 'Zuivel & eieren', 200, 400], ['Diepvriesgroente', 'g', 'Diepvries', 500, 1000],
+  ['Pindakaas', 'g', 'Overig', 350, 700], ['Koffie', 'g', 'Overig', 250, 500]
+];
+
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const norm = s => String(s).trim().toLowerCase();
+const fmt = n => Math.round(n * 10) / 10;
+const fmtAmt = n => fmt(n).toLocaleString('nl-BE');
+const uid = () => Math.random().toString(36).slice(2, 10);
+const byName = (a, b) => a.name.localeCompare(b.name, 'nl');
+const catOptions = sel => CATS.map(c => `<option ${c === sel ? 'selected' : ''}>${c}</option>`).join('');
+const unitOptions = sel => UNITS.map(u => `<option ${u === sel ? 'selected' : ''}>${u}</option>`).join('');
+
+let tab = 'voorraad';
+let state;
+let pending = 0;      // aantal schrijfacties dat nog loopt
+let writeChain = Promise.resolve();
+
+function seed() {
+  state = {
+    pantry: [
+      { id: uid(), name: 'Spaghetti', alias: 'Pasta', unit: 'g', qty: 500, min: 200, target: 1000, cat: 'Droogwaren' },
+      { id: uid(), name: 'Rijst', unit: 'g', qty: 1000, min: 300, target: 1000, cat: 'Droogwaren' },
+      { id: uid(), name: 'Tomatenblokjes', unit: 'blik', qty: 2, min: 1, target: 4, cat: 'Conserven' },
+      { id: uid(), name: 'Kokosmelk', unit: 'blik', qty: 1, min: 1, target: 3, cat: 'Conserven' },
+      { id: uid(), name: 'Kikkererwten', unit: 'blik', qty: 0, min: 1, target: 3, cat: 'Conserven' },
+      { id: uid(), name: 'Olijfolie', unit: 'ml', qty: 500, min: 100, target: 500, cat: 'Kruiden & sauzen' },
+      { id: uid(), name: 'Ui', unit: 'stuk', qty: 2, min: 2, target: 5, cat: 'Groente & fruit' },
+      { id: uid(), name: 'Gehakt', unit: 'g', qty: 0, min: 500, target: 1000, cat: 'Vlees & vis' }
+    ],
+    list: [],
+    plan: DEFAULT_PLAN.map(d => ({ ...d, cooked: false, used: [] }))
+  };
+  restockAll();
+  return state;
+}
+
+// Zorgt dat een opgeslagen of gedeelde toestand altijd de juiste vorm heeft
+function normalize(s) {
+  s = JSON.parse(JSON.stringify(s)); // gedeelde gegevens zijn bevroren, dus eerst een wijzigbare kopie maken
+  return {
+    pantry: s.pantry || [],
+    list: s.list || [],
+    plan: (s.plan || DEFAULT_PLAN).map(d => ({ cooked: false, used: [], ...d, recipe: RECIPES[d.recipe] ? d.recipe : null }))
+  };
+}
+
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if (!s || !s.pantry || !s.list || !s.plan) return null;
+    // Oudere opslagen: conserven uit Droogwaren halen
+    const canned = ['tomatenblokjes', 'kokosmelk', 'kikkererwten', 'appelmoes'];
+    [...s.pantry, ...s.list].forEach(x => {
+      if (canned.includes(norm(x.name))) x.cat = 'Conserven';
+    });
+    return normalize(s);
+  } catch { return null; }
+}
+
+// Gedeelde gegevens in Supabase: de hele toestand staat in één rij (id = state)
+const SB_URL = 'https://iraaeiowmtjgfxvroahm.supabase.co';
+const SB_KEY = 'sb_publishable_XQp_y3wzOn5tDDj9CcD-3w_Vz0cErGb';
+const sbHeaders = { apikey: SB_KEY, 'Content-Type': 'application/json' };
+
+async function sbGet() {
+  const r = await fetch(`${SB_URL}/rest/v1/app_state?id=eq.state&select=data`, { headers: sbHeaders });
+  if (!r.ok) throw new Error(r.status);
+  const rows = await r.json();
+  return rows[0] ? rows[0].data : null;
+}
+
+async function sbPut(data) {
+  const r = await fetch(`${SB_URL}/rest/v1/app_state`, {
+    method: 'POST',
+    headers: { ...sbHeaders, Prefer: 'resolution=merge-duplicates' },
+    body: JSON.stringify({ id: 'state', data })
+  });
+  if (!r.ok) throw new Error(r.status);
+}
+
+// Schrijft de hele toestand, één schrijfactie tegelijk
+function persist() {
+  pending++;
+  writeChain = writeChain
+    .then(() => sbPut(JSON.parse(JSON.stringify(state))))
+    .catch(() => toast('Opslaan mislukt, probeer het opnieuw'))
+    .finally(() => pending--);
+}
+
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+  persist();
+  render();
+}
+
+// Haalt de gedeelde gegevens op en neemt die over, zolang er niets lokaal wordt bewerkt
+async function refresh() {
+  if (pending > 0 || editingId !== null) return;
+  try {
+    const remote = await sbGet();
+    if (remote && JSON.stringify(remote) !== JSON.stringify(state)) {
+      state = normalize(remote);
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+      render();
+    }
+  } catch {
+    toast('Geen verbinding met de gedeelde gegevens');
+  }
+}
+
+async function connect() {
+  try {
+    const remote = await sbGet();
+    if (remote) {
+      state = normalize(remote);
+    } else {
+      await sbPut(state); // eerste keer: de huidige gegevens worden de gedeelde gegevens
+    }
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+    render();
+  } catch {
+    toast('Geen verbinding met de gedeelde gegevens, werkt op dit apparaat');
+  }
+  setInterval(refresh, 30000);
+  window.addEventListener('focus', refresh);
+}
+
+function toast(msg) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => el.hidden = true, 2500);
+}
+
+// ---------- voorraad & boodschappen ----------
+
+// Alle voorraadproducten die voor dit ingrediënt tellen, op naam of op alias (bv. Penne met alias Pasta)
+function matchP(name, unit) {
+  return state.pantry.filter(p => p.unit === unit &&
+    (norm(p.name) === norm(name) || (p.alias && norm(p.alias) === norm(name))));
+}
+
+function findP(name, unit) {
+  return matchP(name, unit)[0];
+}
+
+function haveQty(name, unit) {
+  return matchP(name, unit).reduce((sum, p) => sum + p.qty, 0);
+}
+
+function openOnList(name, unit) {
+  return state.list.find(l => !l.checked && norm(l.name) === norm(name) && l.unit === unit);
+}
+
+// Staat een product onder het minimum en staat het niet al op de lijst, zet het erop
+function restock(p) {
+  const name = p.alias || p.name;
+  if (p.qty > p.min || openOnList(name, p.unit)) return;
+  state.list.push({
+    id: uid(), name, unit: p.unit, cat: p.cat, checked: false, src: 'voorraad', pid: p.id,
+    amount: Math.max(1, fmt(p.target - p.qty))
+  });
+}
+
+function restockAll() { state.pantry.forEach(restock); }
+
+function changeQty(id, delta) {
+  const p = state.pantry.find(x => x.id === id);
+  if (!p) return;
+  p.qty = Math.max(0, fmt(p.qty + delta));
+  restock(p);
+  save();
+}
+
+// Afvinken = gekocht: de hoeveelheid gaat de voorraad in
+function toggleBought(id) {
+  const l = state.list.find(x => x.id === id);
+  if (!l) return;
+  l.checked = !l.checked;
+  let p = state.pantry.find(x => x.id === l.pid) || findP(l.name, l.unit);
+  if (!p) {
+    p = { id: uid(), name: l.name, unit: l.unit, qty: 0, min: 0, target: l.amount, cat: l.cat };
+    state.pantry.push(p);
+  }
+  p.qty = fmt(Math.max(0, p.qty + (l.checked ? l.amount : -l.amount)));
+  save();
+}
+
+// Voegt ontbrekende basisproducten toe en zet alles wat onder het minimum zit op de lijst
+function addBasics() {
+  let added = 0;
+  BASICS.forEach(([name, unit, cat, min, target]) => {
+    let p = findP(name, unit);
+    if (!p) {
+      p = { id: uid(), name, unit, qty: 0, min, target, cat };
+      state.pantry.push(p);
+    }
+    const before = state.list.length;
+    restock(p);
+    if (state.list.length > before) added++;
+  });
+  save();
+  toast(added ? `${added} product(en) op de lijst gezet` : 'De basisvoorraad is al compleet');
+}
+
+// ---------- menu ----------
+
+function scaled(d) {
+  const r = RECIPES[d.recipe];
+  const f = d.portions / r.base;
+  return r.ingr.map(([name, qty, unit, cat]) => ({ name, unit, cat, amount: fmt(qty * f) }));
+}
+
+// Kookdag ongedaan maken: de ingrediënten gaan terug naar de voorraad
+function undo(d) {
+  d.used.forEach(u => {
+    const p = state.pantry.find(x => x.id === u.id);
+    if (p) p.qty = fmt(p.qty + u.amount);
+  });
+  d.used = [];
+  d.cooked = false;
+}
+
+// Kookdag afvinken: ingrediënten gaan uit de voorraad, eerst van het product met de meeste voorraad
+function toggleCooked(i) {
+  const d = state.plan[i];
+  if (!d.recipe) return;
+  if (d.cooked) {
+    undo(d);
+  } else {
+    d.used = scaled(d).flatMap(x => {
+      let left = x.amount;
+      const taken = [];
+      matchP(x.name, x.unit).forEach(p => {
+        const used = Math.min(p.qty, left);
+        if (used <= 0) return;
+        p.qty = fmt(p.qty - used);
+        left = fmt(left - used);
+        restock(p);
+        taken.push({ id: p.id, amount: used });
+      });
+      return taken;
+    });
+    d.cooked = true;
+  }
+  save();
+}
+
+function setRecipe(i, val) {
+  const d = state.plan[i];
+  if (d.cooked) undo(d);
+  d.out = val === 'out';
+  d.recipe = val && !d.out ? val : null;
+  if (d.recipe && !d.portions) d.portions = 4;
+  save();
+}
+
+function setPortions(i, n) {
+  const d = state.plan[i];
+  if (!n || n < 1) return;
+  if (d.cooked) undo(d);
+  d.portions = n;
+  save();
+}
+
+// Telt alle ingrediënten van niet-gekookte kookdagen op, trekt de voorraad af en zet het tekort op de lijst
+function addMenuToList() {
+  const need = {};
+  state.plan.forEach(d => {
+    if (!d.recipe || d.cooked) return;
+    scaled(d).forEach(i => {
+      const k = norm(i.name) + '|' + i.unit;
+      need[k] ??= { ...i, amount: 0 };
+      need[k].amount += i.amount;
+    });
+  });
+  let added = 0;
+  Object.values(need).forEach(i => {
+    const have = haveQty(i.name, i.unit);
+    const short = fmt(i.amount - have);
+    if (short <= 0) return;
+    const open = openOnList(i.name, i.unit);
+    if (open) {
+      open.amount = Math.max(open.amount, short);
+    } else {
+      state.list.push({ id: uid(), name: i.name, unit: i.unit, cat: i.cat, checked: false, src: 'menu', amount: short });
+      added++;
+    }
+  });
+  save();
+  toast(added ? `${added} ingrediënt(en) op de lijst gezet` : 'Niets nodig: de voorraad dekt het menu');
+}
+
+// Rangschikt alle recepten op hoeveel van de ingrediënten al in de voorraad zitten
+function kastRanking() {
+  return Object.entries(RECIPES).map(([key, r]) => {
+    const ingr = scaled({ recipe: key, portions: r.base });
+    const missing = ingr.filter(x => haveQty(x.name, x.unit) < x.amount);
+    return { key, r, missing, score: (ingr.length - missing.length) / ingr.length };
+  }).sort((a, b) => b.score - a.score);
+}
+
+// ---------- weergave ----------
+
+function render() {
+  document.querySelectorAll('nav button[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  const open = state.list.filter(l => !l.checked).length;
+  $('#badge').textContent = open ? `(${open})` : '';
+  $('#main').innerHTML = { voorraad: viewPantry, lijst: viewList, menu: viewMenu }[tab]();
+}
+
+let editingId = null;
+
+// Bewerkformulier voor één product: naam, eenheid, categorie, telt als, aantal, minimum en doel
+function editForm(p) {
+  return `<div class="item">
+    <div class="row">
+      <input class="grow" data-edit="name" value="${esc(p.name)}">
+      <select data-edit="unit">${unitOptions(p.unit)}</select>
+      <select data-edit="cat">${catOptions(p.cat)}</select>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <input class="grow" data-edit="alias" placeholder="Telt als" value="${esc(p.alias || '')}">
+      <input data-edit="qty" type="number" step="any" min="0" placeholder="Aantal" value="${p.qty}" style="width:90px">
+      <input data-edit="min" type="number" step="any" min="0" placeholder="Min." value="${p.min}" style="width:80px">
+      <input data-edit="target" type="number" step="any" min="0" placeholder="Doel" value="${p.target}" style="width:80px">
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button class="primary" data-act="saveP" data-id="${p.id}">Opslaan</button>
+      <button data-act="cancelEdit">Annuleren</button>
+    </div>
+  </div>`;
+}
+
+// Slaat de gewijzigde gegevens van één product op
+function savePantry(id, row) {
+  const p = state.pantry.find(x => x.id === id);
+  if (!p) return;
+  const v = field => row.querySelector(`[data-edit="${field}"]`).value;
+  const name = v('name').trim();
+  if (!name) return toast('Vul eerst een naam in');
+  p.name = name;
+  p.unit = v('unit');
+  p.cat = v('cat');
+  p.alias = v('alias').trim();
+  p.qty = Math.max(0, Number(v('qty')) || 0);
+  p.min = Number(v('min')) || 0;
+  p.target = Number(v('target')) || 0;
+  editingId = null;
+  restock(p);
+  save();
+}
+
+function viewPantry() {
+  const groups = CATS.map(c => {
+    const items = state.pantry.filter(p => p.cat === c).sort(byName);
+    if (!items.length) return '';
+    return `<h2>${c}</h2><div class="card">${items.map(p => editingId === p.id ? editForm(p) : `
+      <div class="row item">
+        <div class="grow ${p.qty <= p.min ? 'low' : ''}"><b>${esc(p.name)}</b>
+          <div class="muted">min ${fmtAmt(p.min)} ${esc(p.unit)} · doel ${fmtAmt(p.target)}</div>
+          <div class="muted">telt als <input data-act="setalias" data-id="${p.id}" value="${esc(p.alias || '')}" placeholder="niets" style="width:110px;padding:2px 6px"></div></div>
+        <button data-act="dec" data-id="${p.id}">−</button>
+        <input class="qty" type="number" min="0" step="any" value="${p.qty}" data-act="setqty" data-id="${p.id}">
+        <span class="muted">${esc(p.unit)}</span>
+        <button data-act="inc" data-id="${p.id}">+</button>
+        <button data-act="editP" data-id="${p.id}">Bewerk</button>
+        <button data-act="delp" data-id="${p.id}" title="Verwijderen">✕</button>
+      </div>`).join('')}</div>`;
+  }).join('');
+  return `<div class="row"><button class="primary" data-act="basics">Vul must-haves aan</button></div>
+    <p class="muted">Zet alle basisproducten die ontbreken of onder het minimum zijn op de boodschappenlijst.</p>
+    ${groups || '<p class="muted">Nog geen producten in de voorraad.</p>'}
+    <h2>Nieuw product</h2>
+    <form id="addP" class="card row">
+      <input class="grow" name="name" placeholder="Naam (bv. Penne)">
+      <input name="alias" placeholder="Telt als (bv. Pasta)" style="width:140px">
+      <input name="qty" type="number" step="any" min="0" placeholder="Aantal" style="width:90px">
+      <select name="unit" style="width:100px">${unitOptions('stuk')}</select>
+      <input name="min" type="number" step="any" min="0" placeholder="Min." style="width:80px">
+      <input name="target" type="number" step="any" min="0" placeholder="Doel" style="width:80px">
+      <select name="cat">${catOptions('Overig')}</select>
+      <button type="button" class="primary" data-act="addForm">Toevoegen</button>
+    </form>
+    <p class="muted">Zakt een product tot het minimum, dan komt het automatisch op de boodschappenlijst.</p>`;
+}
+
+function viewList() {
+  const groups = CATS.map(c => {
+    const items = state.list.filter(l => l.cat === c)
+      .sort((a, b) => a.checked - b.checked || a.name.localeCompare(b.name, 'nl'));
+    if (!items.length) return '';
+    return `<h2>${c}</h2><div class="card">${items.map(l => `
+      <div class="row item">
+        <input type="checkbox" data-act="check" data-id="${l.id}" ${l.checked ? 'checked' : ''}>
+        <div class="grow ${l.checked ? 'done' : ''}"><b>${fmtAmt(l.amount)} ${esc(l.unit)}</b> ${esc(l.name)}</div>
+        <span class="tag">${l.src}</span>
+        <button data-act="dell" data-id="${l.id}" title="Verwijderen">✕</button>
+      </div>`).join('')}</div>`;
+  }).join('');
+  return `
+    <div class="row">
+      <button class="primary" data-act="fromMenu">Voeg weekmenu toe</button>
+      <button data-act="clearChecked">Wis afgevinkt</button>
+      <button data-act="copy">Kopieer lijst</button>
+    </div>
+    ${groups || '<p class="muted">De boodschappenlijst is leeg.</p>'}
+    <h2>Iets anders kopen</h2>
+    <form id="addL" class="card row">
+      <input class="grow" name="name" placeholder="Product">
+      <input name="amount" type="number" step="any" min="0" placeholder="Aantal" style="width:90px">
+      <select name="unit" style="width:100px">${unitOptions('stuk')}</select>
+      <select name="cat">${catOptions('Overig')}</select>
+      <button type="button" class="primary" data-act="addForm">Toevoegen</button>
+    </form>`;
+}
+
+function dayCard(d, i) {
+  const opts = `<option value="">— Restjes van de dag ervoor —</option>` +
+    `<option value="out" ${d.out ? 'selected' : ''}>Bij de grootouders</option>` +
+    Object.entries(RECIPES).map(([k, r]) => `<option value="${k}" ${d.recipe === k ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+  const select = `<select class="grow" data-act="recipe" data-i="${i}">${opts}</select>`;
+  if (d.out) {
+    return `<div class="card"><div class="row"><b style="min-width:90px">${DAYS[i]}</b>${select}</div>
+      <p class="muted">Eten bij de grootouders, samen met de familie. Er wordt niet gekookt.</p></div>`;
+  }
+  if (!d.recipe) {
+    return `<div class="card"><div class="row"><b style="min-width:90px">${DAYS[i]}</b>${select}</div></div>`;
+  }
+  const r = RECIPES[d.recipe];
+  return `<div class="card">
+    <div class="row">
+      <b style="min-width:90px">${DAYS[i]}</b>
+      <span class="tag">${r.type}</span><span class="tag">${r.keuken}</span>
+      ${d.cooked ? '<span class="tag ok">gekookt ✓</span>' : ''}
+    </div>
+    <div class="row" style="margin-top:8px">
+      ${select}
+      <label class="muted">Porties <input class="qty" type="number" min="1" step="1" value="${d.portions}" data-act="portions" data-i="${i}"></label>
+      <button data-act="cook" data-i="${i}">${d.cooked ? 'Ongedaan maken' : 'Gekookt ✓'}</button>
+    </div>
+    <details><summary>Recept en ingrediënten</summary>
+      <p class="muted"><i>${esc(r.kind)}</i></p>
+      <ul>${scaled(d).map(x => `<li>${fmtAmt(x.amount)} ${esc(x.unit)} ${esc(x.name)}</li>`).join('')}</ul>
+      <ol>${r.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
+    </details>
+  </div>`;
+}
+
+function viewKast() {
+  const days = DAYS.map((d, i) => `<option value="${i}">${d}</option>`).join('');
+  return `<h2>Wat kan ik koken met mijn voorraad?</h2>` + kastRanking().map(({ key, r, missing, score }) => `
+    <div class="card">
+      <div class="row">
+        <b class="grow">${esc(r.name)}</b>
+        <span class="tag ${score === 1 ? 'ok' : ''}">${Math.round(score * 100)}% in huis</span>
+      </div>
+      <p class="muted">${missing.length
+        ? 'Mist: ' + missing.map(x => `${fmtAmt(x.amount)} ${esc(x.unit)} ${esc(x.name)}`).join(', ')
+        : 'Alles is in huis'}</p>
+      <div class="row">
+        <select id="day-${key}">${days}</select>
+        <button data-act="kastSet" data-key="${key}">Zet op deze dag</button>
+      </div>
+    </div>`).join('');
+}
+
+function viewMenu() {
+  return `
+    <div class="row"><button class="primary" data-act="fromMenu">Zet ontbrekende ingrediënten op de lijst</button></div>
+    <p class="muted">Per kookdag maak je het aantal porties dat je hierboven invult. De restjes eten jullie de dag erna, of ze gaan in de vriezer of mee naar het werk.
+      Gekookte ingrediënten worden van de voorraad afgetrokken.</p>
+    ${state.plan.map(dayCard).join('')}
+    ${viewKast()}`;
+}
+
+// ---------- lijst kopiëren ----------
+
+async function copyList() {
+  const text = CATS.flatMap(c => {
+    const items = state.list.filter(l => !l.checked && l.cat === c);
+    return items.length ? [c, ...items.map(l => `- ${fmtAmt(l.amount)} ${l.unit} ${l.name}`), ''] : [];
+  }).join('\n').trim() || 'Boodschappenlijst is leeg';
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Lijst gekopieerd');
+  } catch {
+    prompt('Kopieer de lijst:', text);
+  }
+}
+
+// ---------- export / import ----------
+
+function exportData() {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: 'gezinsapp.json' });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function importData(file) {
+  try {
+    const s = JSON.parse(await file.text());
+    if (!s.pantry || !s.list || !s.plan) throw new Error('ongeldig');
+    state = normalize(s);
+    save();
+    toast('Gegevens geïmporteerd');
+  } catch {
+    toast('Dit bestand kan niet gelezen worden');
+  }
+}
+
+// ---------- events ----------
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-tab],[data-act]');
+  if (!t) return;
+  if (t.dataset.tab) { tab = t.dataset.tab; render(); return; }
+  const id = t.dataset.id;
+  const i = Number(t.dataset.i);
+  switch (t.dataset.act) {
+    case 'inc': return changeQty(id, 1);
+    case 'dec': return changeQty(id, -1);
+    case 'delp': state.pantry = state.pantry.filter(p => p.id !== id); return save();
+    case 'dell': state.list = state.list.filter(l => l.id !== id); return save();
+    case 'clearChecked': state.list = state.list.filter(l => !l.checked); return save();
+    case 'fromMenu': return addMenuToList();
+    case 'basics': return addBasics();
+    case 'kastSet': return setRecipe(Number(document.getElementById('day-' + t.dataset.key).value), t.dataset.key);
+    case 'copy': return copyList();
+    case 'cook': return toggleCooked(i);
+    case 'export': return exportData();
+    case 'addForm': return handleForm(t.closest('form'));
+    case 'editP': editingId = id; return render();
+    case 'cancelEdit': editingId = null; return render();
+    case 'saveP': return savePantry(id, t.closest('.item'));
+  }
+});
+
+document.addEventListener('change', e => {
+  const t = e.target;
+  const i = Number(t.dataset.i);
+  switch (t.dataset.act) {
+    case 'check': return toggleBought(t.dataset.id);
+    case 'setqty': {
+      const p = state.pantry.find(x => x.id === t.dataset.id);
+      if (!p) return;
+      p.qty = Math.max(0, Number(t.value) || 0);
+      restock(p);
+      return save();
+    }
+    case 'setalias': {
+      const p = state.pantry.find(x => x.id === t.dataset.id);
+      if (!p) return;
+      p.alias = t.value.trim();
+      return save();
+    }
+    case 'recipe': return setRecipe(i, t.value);
+    case 'portions': return setPortions(i, Number(t.value));
+    case 'import': return importData(t.files[0]);
+  }
+});
+
+// Verwerkt een formulier voor Nieuw product of Iets anders kopen
+function handleForm(f) {
+  const d = Object.fromEntries(new FormData(f));
+  if (!d.name.trim()) return toast('Vul eerst een naam in');
+  if (f.id === 'addP' && d.qty === '') return toast('Vul eerst een aantal in');
+  if (f.id === 'addP') {
+    const name = d.name.trim();
+    const unit = d.unit || 'stuk';
+    const existing = findP(name, unit);
+    if (existing) {
+      existing.qty = fmt(existing.qty + Number(d.qty));
+      if (d.alias.trim()) existing.alias = d.alias.trim();
+      if (d.min) existing.min = Number(d.min);
+      if (d.target) existing.target = Number(d.target);
+      restock(existing);
+    } else {
+      const p = { id: uid(), name, alias: d.alias.trim(), unit, qty: Number(d.qty) || 0, min: Number(d.min) || 0, target: Number(d.target) || 0, cat: d.cat };
+      state.pantry.push(p);
+      restock(p);
+    }
+    save();
+  }
+  if (f.id === 'addL') {
+    state.list.push({
+      id: uid(), name: d.name.trim(), unit: d.unit || 'stuk', cat: d.cat,
+      checked: false, src: 'handmatig', amount: Number(d.amount) || 1
+    });
+    save();
+  }
+}
+
+document.addEventListener('submit', e => {
+  e.preventDefault();
+  handleForm(e.target);
+});
+
+// Start met de lokale kopie (of voorbeelddata), daarna neemt de gedeelde database het over
+state = load() || seed();
+render();
+connect();
+</script>
